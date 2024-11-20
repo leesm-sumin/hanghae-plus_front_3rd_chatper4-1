@@ -1,40 +1,118 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/pages/api-reference/create-next-app).
+# 프론트엔드 배포 파이프라인
 
-## Getting Started
+## 개요
 
-First, run the development server:
+![workflow](https://github.com/user-attachments/assets/3417e633-62d9-49c4-9f82-0974fe64b86e)
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+1. 저장소를 체크아웃합니다.
+2. Node.js 18.x 버전을 설정합니다.
+3. 프로젝트 의존성을 설치합니다.
+4. Next.js 프로젝트를 빌드합니다.
+5. AWS 자격 증명을 구성합니다.
+6. 빌드된 파일을 S3 버킷에 동기화합니다.
+7. CloudFront 캐시를 무효화합니다.
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## 주요 링크
 
-You can start editing the page by modifying `pages/index.tsx`. The page auto-updates as you edit the file.
+- S3 버킷 웹사이트 엔드포인트: http://hanghae-plus-front-4-1.s3-website.ap-northeast-2.amazonaws.com
+- CloudFrount 배포 도메인 이름: https://d30fcdk9lnymjw.cloudfront.net
 
-[API routes](https://nextjs.org/docs/pages/building-your-application/routing/api-routes) can be accessed on [http://localhost:3000/api/hello](http://localhost:3000/api/hello). This endpoint can be edited in `pages/api/hello.ts`.
+## 주요 개념
 
-The `pages/api` directory is mapped to `/api/*`. Files in this directory are treated as [API routes](https://nextjs.org/docs/pages/building-your-application/routing/api-routes) instead of React pages.
+- GitHub Actions과 CI/CD 도구
+  - CI/CD 도구
+    - 지속적 통합(Continuous Integration) 및 지속적 제공/배포(Continuous Delivery/Deployment)을 제공하는 도구
+    - GitHub Actions, Jenkins, CircleCI, GitLab CI/CD 등이 있습니다.
+    - 소프트웨어 개발의 자동화를 통해 빠르고 안정적인 배포를 가능하게 합니다.
+  - GitHub Actions
+    - GitHub 리포지토리에 통합되어 추가 설정이 필요없이 YAML 파일을 사용하여 워크플로우를 정의할 수 있습니다.
+    - GitHub 이벤트(PR, Push 등)에 반응해 자동화 작업을 수행할 수 있습니다.
+- S3와 스토리지
+  - 스토리지
+    - 데이터를 저장하고 관리하는 기술 및 장치
+    - 객체 스토리지, 분산 스토리지 등이 있습니다.
+  - S3
+    - AWS에서 제공하는 객체 스토리지 서비스로, 객체는 파일 데이터와 메타데이터를 포함하며, 버킷(Bucket)이라는 컨테이너에 저장합니다.
+    - 장점
+      - 데이터를 대규모로 저장하고 빠르게 접근 가능
+      - HTTP/HTTPS 프로토콜을 통해 데이터에 접근
+      - IAM 정책과 버킷 정책으로 정밀한 접근 제어
+    - 소프트웨어 배포, 웹 애플리케이션 콘텐츠 저장 등에 사용됩니다.
+- CloudFront와 CDN
+  - CDN
+    - 사용자와 가장 가까운 서버(엣지 서버)를 통해 웹 콘텐츠를 빠르고 효율적으로 전송하는 분산 네트워크 시스템
+    - CloudFront, Cloudflare 등이 있습니다.
+  - CloudFront
+    - AWS에서 제공하는 글로벌 콘텐츠 전송 네트워크(CDN) 서비스
+    - S3, EC2 등 AWS 서비스와 원활한 통합이 가능하고, 정적/동적 콘텐츠의 빠른 전송과 HTTPS 보안을 지원합니다.
+    - 글로벌 사용자에게 빠른 콘텐츠 제공할 수 있으며, 오리진 서버의 부하를 감소시킬 수 있습니다.
+- 캐시 무효화(Cache Invalidation)
+  - 오래되거나 더 이상 유효하지 않은 캐시된 콘텐츠를 강제로 새로고침하는 프로세스
+  - 현재 워크플로우 마지막 단계에서 캐시 무효화가 수행되어, 최신 빌드된 파일들이 S3에 업로드된 직후 사용자가 즉시 최신 버전 콘텐츠를 볼 수 있게 합니다.
+- Repository secret과 환경변수
+  - 환경변수
+    - 프로세스에 동적으로 전달되는 키-값 쌍
+    - 런타임에 접근 가능하며 시스템, 애플리케이션 설정을 저장하고 다양한 환경(개발, 스테이징, 프로덕션)을 구분합니다.
+  - Repository secret
+    - GitHub 저장소에 안전하게 저장되는 암호화된 환경 변수
+    - 민감한 정보를 코드에 직접 노출하지 않고 보호합니다.
 
-This project uses [`next/font`](https://nextjs.org/docs/pages/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## CDN 적용 전후 성능 분석
 
-## Learn More
+### 성능 비교 - Chrome 개발자 도구 네트워크 탭
 
-To learn more about Next.js, take a look at the following resources:
+| CDN 적용 전 (S3)                                                                                                                               | CDN 적용 후                                                                                                                                    |
+| ---------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| <img width="737" alt="CDN_before_EmptyCache_HardReload" src="https://github.com/user-attachments/assets/43065d00-a930-4720-90be-550f76249bd2"> | <img width="737" alt="CDN_after_EmptyCache_Hard_Reload" src="https://github.com/user-attachments/assets/61b42efb-99e4-4713-872b-e1afda553e50"> |
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn-pages-router) - an interactive Next.js tutorial.
+### 1. 주요 성능 개선 사항
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- CDN 적용 후, 파일 크기와 다운로드 시간이 다음과 같이 크게 개선되었습니다:
 
-## Deploy on Vercel
+  - 파일 크기: 주요 파일 타입에서 최대 70.1%의 크기 감소.
+  - 다운로드 시간: 평균 55% 이상의 다운로드 시간 단축.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### 2. 세부 성능 비교
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/pages/building-your-application/deploying) for more details.
+#### (1) 파일 크기
+
+| 파일 타입  | CDN 적용 전(S3) | CDN 적용 후 | 비고          |
+| ---------- | --------------- | ----------- | ------------- |
+| document   | 5.4 kB          | 1.8 kB      | 약 66.7% 감소 |
+| font       | 135.2 kB        | 135 kB      | 약 0.1% 감소  |
+| stylesheet | 9.4 kB          | 3.8 kB      | 약 59.6% 감소 |
+| script     | 313.994 kB      | 93.9 kB     | 약 70.1% 감소 |
+| svg+xml    | 5.078 kB        | 3.751 kB    | 약 26.1% 감소 |
+
+#### (2) 파일 다운로드 시간
+
+| 파일 타입  | CDN 적용 전(S3) | CDN 적용 후 | 비고          |
+| ---------- | --------------- | ----------- | ------------- |
+| document   | 32ms            | 31ms        | 약 3.1% 감소  |
+| font       | 110ms           | 47ms        | 약 57.3% 감소 |
+| stylesheet | 99ms            | 23ms        | 약 76.8% 감소 |
+| script     | 226ms           | 194ms       | 약 14.2% 감소 |
+| svg+xml    | 131ms           | 53ms        | 약 59.5% 감소 |
+
+### 3. 분석 및 결론
+
+#### (1) 파일 크기 감소:
+
+- CDN 적용하였을 때 Gzip이나 Brotli와 같은 압축 알고리즘이 사용되어 파일 크기가 압축되면서 전반적으로 다운로드 데이터 전송량이 감소했습니다.
+- 특히, Script(70.1%)와 Stylesheet(59.6%)에서 크게 개선되었습니다.
+
+#### (2) 다운로드 시간 단축:
+
+- 설명:
+
+- CDN의 엣지 서버가 사용자와 가까운 위치에서 요청을 처리하여, 다운로드 시간이 Stylesheet(76.8%), Font(57.3%) 등에서 크게 감소했습니다.
+
+- Font의 경우 압축 효과가 미미하지만, CDN 캐싱을 통해 전송 속도는 향상되었습니다.
+
+#### (3) 결론
+
+- CDN 적용을 통해 사용자에게 빠르고 원활한 웹 탐색 환경을 제공할 수 있습니다.
+  - CDN의 장점:
+    - 데이터 압축으로 전송량 감소
+    - 엣지 서버로 인한 빠른 응답 시간
+    - 트래픽 감소와 서버 부하 완화
